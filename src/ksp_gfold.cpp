@@ -12,7 +12,7 @@
 #include <krpc/services/ui.hpp>
 #include <krpc/services/drawing.hpp>
 
-#include "socp_solver.hpp"
+#include "gfold_solver.hpp"
 
 using namespace krpc;
 using namespace krpc::services;
@@ -25,9 +25,9 @@ SpaceCenter::Vessel vessel;
 
 SpaceCenter::ReferenceFrame local_reference_frame;
 
-SocpSolver *solver;
+GFOLDSolver *solver;
 
-void print_state()
+void log_state()
 {
     auto [px, py, pz] = vessel.position(local_reference_frame);
     auto [vx, vy, vz] = vessel.velocity(local_reference_frame);
@@ -41,7 +41,7 @@ void print_state()
 
 void ascent()
 { 
-    print_state();
+    log_state();
     
     for (auto &rcs : vessel.parts().rcs()) {
         rcs.set_enabled(true);
@@ -49,8 +49,6 @@ void ascent()
         rcs.set_yaw_enabled(true); 
     }
 
-    //vessel.auto_pilot().set_time_to_peak({1.0, 1.0, 1.0});
-    //vessel.auto_pilot().set_overshoot({0.02, 0.02, 0.02});
     vessel.auto_pilot().set_deceleration_time({3.0, 3.0, 3.0});
     vessel.auto_pilot().target_pitch_and_heading(80, 30);
     vessel.auto_pilot().engage();
@@ -95,8 +93,7 @@ void draw_trajectory(Variables &vars)
 
 void landing()
 {
-    float tf = 40000;  //ms
-    float max_angle = 10, target_altitude = 0;   
+    float tf = 40;  // seconds
     bool recompute = true;
     int ctrl_hori = 1, ctrl_indic = 0;
 
@@ -105,7 +102,7 @@ void landing()
      while (true) {
         //auto start = std::chrono::steady_clock::now();
 
-        print_state();
+        log_state();
 
         auto landing_legs = vessel.parts().legs();
         for (auto &leg : landing_legs) {
@@ -120,7 +117,8 @@ void landing()
         if (recompute) {
             recompute = false;
       
-            solver->update_parameters(tf/1000.0, max_angle, target_altitude);
+            solver->set_flight_time(tf);
+            solver->update_state();
 
             if (!solver->solve()) {
                 throw std::runtime_error("Solver: Infeasible");
@@ -144,7 +142,7 @@ void landing()
         vessel.control().set_throttle(t);
         LOG(INFO) << "request thrust: " << tr << ", throttle: " << t;
 
-        int64_t dt = static_cast<int64_t>(tf) / vars->steps;
+        float dt = tf / vars->steps;
         LOG(INFO) << "tf: " << tf << ", dt: " << dt;
 
         ctrl_indic++;
@@ -152,14 +150,14 @@ void landing()
             ctrl_indic = 0;
             recompute = true;
 
-            float k = tf < 10000 ? 0.7 : 1.0;
+            float k = tf < 10.0 ? 0.7 : 1.0;
             tf -= k * dt * ctrl_hori;
         } 
 
         //auto end = std::chrono::steady_clock::now(); 
         //auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
         //std::this_thread::sleep_for(std::chrono::milliseconds(dt - duration.count()));
-        std::this_thread::sleep_for(std::chrono::milliseconds(dt));
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(dt*1000)));
     }
 }
 
@@ -197,7 +195,8 @@ int main(int argc, char *argv[])
     auto relative_frame = SpaceCenter::ReferenceFrame::create_relative(client, earth_reference_frame, {position.x(), position.y(), position.z()});
     local_reference_frame = SpaceCenter::ReferenceFrame::create_hybrid(client, relative_frame, vessel.surface_reference_frame()); //x: up, y: north, z: east
 
-    solver = new SocpSolver(&vessel, local_reference_frame, steps);
+    solver = new GFOLDSolver(&vessel, local_reference_frame, steps);
+    solver->set_max_angle(10);
 
     int state  = 0; 
     while (true) {

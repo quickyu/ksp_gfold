@@ -33,7 +33,7 @@ target_link_libraries(test_solver
 
 add_executable(ksp_gfold
         src/ksp_gfold.cpp
-        src/socp_solver.cpp
+        src/gfold_solver.cpp
         )        
 
 target_include_directories(ksp_gfold PUBLIC

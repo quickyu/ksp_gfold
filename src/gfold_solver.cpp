@@ -2,9 +2,9 @@
 #include <math.h>
 #include <glog/logging.h>
 
-#include "socp_solver.hpp"
+#include "gfold_solver.hpp"
 
-SocpSolver::SocpSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame reference_frame, int steps)
+GFOLDSolver::GFOLDSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame reference_frame, int steps)
    : vessel(vessel), reference_frame(reference_frame), steps(steps)
 {
    for (int i = 0; i < 6; i++) {
@@ -20,7 +20,7 @@ SocpSolver::SocpSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame 
    solver_vars.steps = steps;
 }
 
-void SocpSolver::update_parameters(float flight_time, float max_angle, float target_altitude)
+void GFOLDSolver::update_state()
 {
    float dt = flight_time / steps;
    float dt_sq = dt*dt;
@@ -60,14 +60,9 @@ void SocpSolver::update_parameters(float flight_time, float max_angle, float tar
    cpg_update_initial_vel(0, vy); //vy
    cpg_update_initial_vel(1, vz); //vz
    cpg_update_initial_vel(2, vx); //vx
-
-   //cpg_update_target_velocity(2, -10);
-   cpg_update_target_position(2, target_altitude);
-   cpg_update_max_angle(std::cos(max_angle/180.0*M_PI));
-   //cpg_update_sin_glide_slope(std::sin(30.0/180.0*M_PI));
 }
 
-bool SocpSolver::solve()
+bool GFOLDSolver::solve()
 {
    cpg_solve();
 
@@ -82,13 +77,35 @@ bool SocpSolver::solve()
 }
 
 //return variables x, z, u, s
-Variables * SocpSolver::get_variables()
+Variables * GFOLDSolver::get_variables()
 {
    return &solver_vars;
 }
 
-void SocpSolver::cleanup()
+void GFOLDSolver::cleanup()
 {
    ECOS_cleanup(ecos_workspace, 0);
    ecos_workspace = nullptr;
+}
+
+void GFOLDSolver::set_flight_time(float flight_time)
+{
+   this->flight_time = flight_time;
+}
+
+void GFOLDSolver::set_glide_slope(float glide_slope)
+{
+   cpg_update_sin_glide_slope(std::sin(glide_slope/180.0*M_PI));
+}
+
+void GFOLDSolver::set_max_angle(float angle)
+{
+   cpg_update_max_angle(std::cos(angle/180.0*M_PI));
+}
+
+void GFOLDSolver::set_target_position(const std::tuple<float, float, float> &&target_position)
+{
+   cpg_update_target_position(0, std::get<1>(target_position));  // posy
+   cpg_update_target_position(1, std::get<2>(target_position));  // posz
+   cpg_update_target_position(2, std::get<0>(target_position));  // posx
 }

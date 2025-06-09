@@ -20,12 +20,20 @@ struct Variables {
     double *z;
 };
 
-class SocpSolver
+class GFOLDSolver
 {
 public:
-    SocpSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame reference_frame, int steps);
+    GFOLDSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame reference_frame, int steps);
 
-    void update_parameters(float flight_time, float max_angle, float target_altitude);
+    void update_state();
+
+    void set_flight_time(float flight_time); // seconds
+
+    void set_glide_slope(float glide_slope); // degrees
+
+    void set_max_angle(float angle); //degrees
+
+    void set_target_position(const std::tuple<float, float, float> &&target_position);
 
     bool solve();
 
@@ -35,10 +43,10 @@ public:
 
 private:
     SpaceCenter::Vessel *vessel;
-
     SpaceCenter::ReferenceFrame reference_frame;
 
     int steps;
+    float flight_time;
 
     Variables solver_vars;
 };
