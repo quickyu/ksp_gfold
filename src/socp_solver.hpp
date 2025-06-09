@@ -25,11 +25,13 @@ class SocpSolver
 public:
     SocpSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame reference_frame, int steps);
 
-    void update_parameters(float flight_time);
+    void update_parameters(float flight_time, float max_angle, float target_altitude);
 
     bool solve();
 
     Variables * get_variables();
+
+    void cleanup();
 
 private:
     SpaceCenter::Vessel *vessel;

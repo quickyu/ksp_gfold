@@ -20,7 +20,7 @@ SocpSolver::SocpSolver(SpaceCenter::Vessel *vessel, SpaceCenter::ReferenceFrame 
    solver_vars.steps = steps;
 }
 
-void SocpSolver::update_parameters(float flight_time)
+void SocpSolver::update_parameters(float flight_time, float max_angle, float target_altitude)
 {
    float dt = flight_time / steps;
    float dt_sq = dt*dt;
@@ -61,9 +61,10 @@ void SocpSolver::update_parameters(float flight_time)
    cpg_update_initial_vel(1, vz); //vz
    cpg_update_initial_vel(2, vx); //vx
 
-   cpg_update_target_velocity(2, -2);
-   //cpg_update_target_position(2, 15);
-   //cpg_update_max_angle(std::cos(3.0/180.0*M_PI));
+   //cpg_update_target_velocity(2, -10);
+   cpg_update_target_position(2, target_altitude);
+   cpg_update_max_angle(std::cos(max_angle/180.0*M_PI));
+   //cpg_update_sin_glide_slope(std::sin(30.0/180.0*M_PI));
 }
 
 bool SocpSolver::solve()
@@ -84,4 +85,10 @@ bool SocpSolver::solve()
 Variables * SocpSolver::get_variables()
 {
    return &solver_vars;
+}
+
+void SocpSolver::cleanup()
+{
+   ECOS_cleanup(ecos_workspace, 0);
+   ecos_workspace = nullptr;
 }
