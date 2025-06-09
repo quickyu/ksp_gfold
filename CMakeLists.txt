@@ -34,6 +34,7 @@ target_link_libraries(test_solver
 add_executable(ksp_gfold
         src/ksp_gfold.cpp
         src/gfold_solver.cpp
+        src/draw_trajectory.cpp
         )        
 
 target_include_directories(ksp_gfold PUBLIC

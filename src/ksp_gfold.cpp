@@ -9,15 +9,15 @@
 #include <krpc.hpp>
 #include <krpc/services/krpc.hpp>
 #include <krpc/services/space_center.hpp>
-#include <krpc/services/ui.hpp>
-#include <krpc/services/drawing.hpp>
 
 #include "gfold_solver.hpp"
+#include "draw_trajectory.hpp"
 
 using namespace krpc;
 using namespace krpc::services;
 
 constexpr int steps = 60;
+constexpr const char *host_ip = "172.24.208.1";
 
 Client client;
 SpaceCenter *space_center;
@@ -61,9 +61,9 @@ void ascent()
     LOG(INFO) << "Launch!";
     vessel.control().activate_next_stage();
 
-    std::this_thread::sleep_for(std::chrono::seconds(13));
+    std::this_thread::sleep_for(std::chrono::seconds(7));
     vessel.auto_pilot().target_pitch_and_heading(100, 30);
-    std::this_thread::sleep_for(std::chrono::seconds(8));
+    std::this_thread::sleep_for(std::chrono::seconds(5));
     vessel.auto_pilot().target_pitch_and_heading(90, 30);
     vessel.control().set_throttle(0.01);
 
@@ -79,39 +79,32 @@ void ascent()
     vessel.auto_pilot().set_reference_frame(local_reference_frame);
 }
 
-void draw_trajectory(Variables &vars)
-{
-    Drawing drawing(&client);
-    drawing.clear();
-
-    for (size_t i = 0; i < vars.steps - 1; i++) {
-        auto line = drawing.add_line({vars.x[2][i], vars.x[0][i], vars.x[1][i]}, {vars.x[2][i+1], vars.x[0][i+1], vars.x[1][i+1]}, local_reference_frame);
-        line.set_color({1, 0, 0});
-        line.set_thickness(0.7);
-    }
-}
-
 void landing()
 {
-    float tf = 40;  // seconds
+    float tf = 18;  // seconds
     bool recompute = true;
     int ctrl_hori = 1, ctrl_indic = 0;
 
     Variables *vars = solver->get_variables();
 
-     while (true) {
-        //auto start = std::chrono::steady_clock::now();
+    std::unique_ptr<DrawTrajectory> draw_trajectory = std::make_unique<DrawTrajectory>(host_ip, local_reference_frame, steps); 
 
+    while (true) {
         log_state();
 
+        int landing_count = 0;
         auto landing_legs = vessel.parts().legs();
         for (auto &leg : landing_legs) {
             bool is_grounded = leg.is_grounded();
             if (is_grounded) {
-                vessel.control().set_throttle(0);
-                LOG(INFO) << "Touch down";
-                return;
+                landing_count++;
             }
+        }
+
+        if (landing_count == 4) {
+            vessel.control().set_throttle(0);
+            LOG(INFO) << "Touch down";
+            return;
         }
 
         if (recompute) {
@@ -124,7 +117,7 @@ void landing()
                 throw std::runtime_error("Solver: Infeasible");
             }
 
-            //draw_trajectory(*vars);
+            draw_trajectory->update_trajectory(vars);
         }
 
         Eigen::Vector3d u = Eigen::Vector3d(vars->u[2][ctrl_indic], vars->u[0][ctrl_indic], vars->u[1][ctrl_indic]);
@@ -154,9 +147,6 @@ void landing()
             tf -= k * dt * ctrl_hori;
         } 
 
-        //auto end = std::chrono::steady_clock::now(); 
-        //auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-        //std::this_thread::sleep_for(std::chrono::milliseconds(dt - duration.count()));
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(dt*1000)));
     }
 }
@@ -181,7 +171,7 @@ int main(int argc, char *argv[])
     google::InstallPrefixFormatter(&custom_prefix);
     FLAGS_logtostdout = 1;
     
-    client = krpc::connect("", "172.24.208.1");
+    client = krpc::connect("", host_ip);
     space_center = new SpaceCenter(&client);
     vessel = space_center->active_vessel();
 
