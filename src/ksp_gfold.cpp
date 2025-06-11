@@ -1,4 +1,6 @@
 #include <iostream>
+#include <map>
+#include <string>
 #include <memory>
 #include <chrono>
 #include <thread>
@@ -6,6 +8,7 @@
 #include <cmath>
 #include <glog/logging.h>
 #include <iomanip>
+#include <yaml-cpp/yaml.h>
 #include <krpc.hpp>
 #include <krpc/services/krpc.hpp>
 #include <krpc/services/space_center.hpp>
@@ -16,8 +19,7 @@
 using namespace krpc;
 using namespace krpc::services;
 
-constexpr int steps = 60;
-constexpr const char *host_ip = "172.24.208.1";
+YAML::Node config;
 
 Client client;
 SpaceCenter *space_center;
@@ -39,37 +41,48 @@ void log_state()
         << px << ", pos_y: " << py << ", pos_z: " << pz << ", vx: " << vx << ", vy: " << vy << ", vz: " << vz;
 }
 
-void ascent()
+void ascent_phase()
 { 
-    log_state();
-    
-    for (auto &rcs : vessel.parts().rcs()) {
-        rcs.set_enabled(true);
-        rcs.set_pitch_enabled(true);
-        rcs.set_yaw_enabled(true); 
+    std::vector<std::map<std::string, float>> sequence;
+    auto maneuver_seq = config["ascent_maneuver_sequence"];
+    for (size_t i = 0; i < maneuver_seq.size(); i++) {
+        auto action = maneuver_seq[i];
+        sequence.push_back({
+            {"pitch", action[0].as<float>()},
+            {"heading", action[1].as<float>()},
+            {"throttle", action[2].as<float>()},
+            {"duration", action[3].as<float>()}
+        });
     }
 
+    if (config["enable_rcs"].as<bool>()) {
+        for (auto &rcs : vessel.parts().rcs()) {
+            rcs.set_enabled(true);
+            rcs.set_pitch_enabled(true);
+            rcs.set_yaw_enabled(true); 
+        }
+        vessel.control().set_rcs(true);
+    }
+
+    log_state();
+    
     vessel.auto_pilot().set_deceleration_time({3.0, 3.0, 3.0});
-    vessel.auto_pilot().target_pitch_and_heading(80, 30);
     vessel.auto_pilot().engage();
 
-    vessel.control().set_rcs(true);
-    vessel.control().set_throttle(1.0);
-
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-
     LOG(INFO) << "Launch!";
+    vessel.control().set_throttle(1.0);
     vessel.control().activate_next_stage();
 
-    std::this_thread::sleep_for(std::chrono::seconds(7));
-    vessel.auto_pilot().target_pitch_and_heading(100, 30);
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    vessel.auto_pilot().target_pitch_and_heading(90, 30);
-    vessel.control().set_throttle(0.01);
+    for (auto &action : sequence) {
+        LOG(INFO) << "ascent seq: " << action["pitch"] << " " << action["heading"] << " " << action["throttle"] << " " << action["duration"];
+        vessel.auto_pilot().target_pitch_and_heading(action["pitch"], action["heading"]);
+        vessel.control().set_throttle(action["throttle"]);
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(action["duration"])));
+    }
 
     while (true) {
         auto [vx, vy, vz] = vessel.velocity(local_reference_frame);
-        if (vx < -5.0) {
+        if (vx < config["ascent_exit_velocity"].as<float>()) {
             break;
         }
 
@@ -79,15 +92,17 @@ void ascent()
     vessel.auto_pilot().set_reference_frame(local_reference_frame);
 }
 
-void landing()
+void landing_phase()
 {
-    float tf = 18;  // seconds
+    float tf = config["initial_flight_time"].as<float>();  // seconds
+
     bool recompute = true;
-    int ctrl_hori = 1, ctrl_indic = 0;
+    int ctrl_hori = config["control_horizon"].as<int>(), ctrl_indic = 0;
 
     Variables *vars = solver->get_variables();
 
-    std::unique_ptr<DrawTrajectory> draw_trajectory = std::make_unique<DrawTrajectory>(host_ip, local_reference_frame, steps); 
+    std::unique_ptr<DrawTrajectory> draw_trajectory = 
+        std::make_unique<DrawTrajectory>(config["krpc_host_ip"].as<std::string>(), local_reference_frame, vars->steps); 
 
     while (true) {
         log_state();
@@ -167,36 +182,48 @@ void custom_prefix(std::ostream &s, const google::LogMessage &m, void * /*data*/
 
 int main(int argc, char *argv[]) 
 {
+    if (argc != 2) {
+        printf("Useage: %s config_file_path\n", argv[0]);
+        return 0;
+    }
+
+    config = YAML::LoadFile(argv[1]);
+
     google::InitGoogleLogging(argv[0]);
     google::InstallPrefixFormatter(&custom_prefix);
     FLAGS_logtostdout = 1;
     
-    client = krpc::connect("", host_ip);
+    client = krpc::connect("", config["krpc_host_ip"].as<std::string>());
     space_center = new SpaceCenter(&client);
     vessel = space_center->active_vessel();
 
     auto earth_reference_frame = vessel.orbit().body().reference_frame();
 
-    auto [x, y, z] = vessel.position(earth_reference_frame);
-    Eigen::Vector3d position{x, y, z};
-    double length = position.norm() - 15;
+    //landing pad earth reference frame position
+    Eigen::Vector3d position{
+        config["landing_pad_coordinate"][0].as<double>(), // x
+        config["landing_pad_coordinate"][1].as<double>(), // y
+        config["landing_pad_coordinate"][2].as<double>()  // z
+    }; 
+    double length = position.norm() + config["origin_vertical_offset"].as<float>();
     position = position.normalized() * length;
 
     auto relative_frame = SpaceCenter::ReferenceFrame::create_relative(client, earth_reference_frame, {position.x(), position.y(), position.z()});
-    local_reference_frame = SpaceCenter::ReferenceFrame::create_hybrid(client, relative_frame, vessel.surface_reference_frame()); //x: up, y: north, z: east
+    local_reference_frame = SpaceCenter::ReferenceFrame::create_hybrid(client, relative_frame, vessel.surface_reference_frame()); //ENU coordinate system, x: up, y: north, z: east
 
-    solver = new GFOLDSolver(&vessel, local_reference_frame, steps);
-    solver->set_max_angle(10);
+    solver = new GFOLDSolver(&vessel, local_reference_frame, config["solver_steps"].as<int>());
+    solver->set_max_angle(config["max_angle"].as<float>());
+    solver->set_glide_slope(config["glide_slope_angle"].as<float>());
 
     int state  = 0; 
     while (true) {
         switch (state) {
         case 0:
-            ascent();
+            ascent_phase();
             state = 1;
             break;
         case 1:      
-            landing();  
+            landing_phase();  
             return 0;
         }
     }

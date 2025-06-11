@@ -102,10 +102,3 @@ void GFOLDSolver::set_max_angle(float angle)
 {
    cpg_update_max_angle(std::cos(angle/180.0*M_PI));
 }
-
-void GFOLDSolver::set_target_position(const std::tuple<float, float, float> &&target_position)
-{
-   cpg_update_target_position(0, std::get<1>(target_position));  // posy
-   cpg_update_target_position(1, std::get<2>(target_position));  // posz
-   cpg_update_target_position(2, std::get<0>(target_position));  // posx
-}

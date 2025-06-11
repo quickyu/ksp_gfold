@@ -33,8 +33,6 @@ public:
 
     void set_max_angle(float angle); //degrees
 
-    void set_target_position(const std::tuple<float, float, float> &&target_position);
-
     bool solve();
 
     Variables * get_variables();

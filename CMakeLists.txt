@@ -12,7 +12,8 @@ find_package(matplotlibcpp17 REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(Protobuf REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package (glog REQUIRED)
+find_package(glog REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 add_subdirectory(src/solver)
 
@@ -41,7 +42,8 @@ target_include_directories(ksp_gfold PUBLIC
         ${cpg_include}
         ${ZLIB_INCLUDE_DIRS} 
         ${Protobuf_INCLUDE_DIRS}
-        ${EIGEN3_INCLUDE_DIRS})
+        ${EIGEN3_INCLUDE_DIRS}
+        ${YAML_CPP_INCLUDE_DIR})
 
 target_link_libraries(ksp_gfold
         cpg
@@ -49,4 +51,5 @@ target_link_libraries(ksp_gfold
         ${Protobuf_LIBRARIES} 
         krpc
         glog::glog
+        ${YAML_CPP_LIBRARIES}
         )
