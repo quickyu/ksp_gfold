@@ -15,7 +15,7 @@ find_package(Eigen3 REQUIRED)
 find_package(glog REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-add_subdirectory(src/solver)
+add_subdirectory(scripts/solver/c_code/c/)
 
 add_executable(test_solver
         src/test_solver.cpp
