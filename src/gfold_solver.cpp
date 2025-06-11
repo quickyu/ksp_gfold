@@ -41,16 +41,13 @@ void GFOLDSolver::update_state()
 
    float max_thrust = vessel->available_thrust(), min_thrust = 0.39 * max_thrust;
 
-   double *c_z0 = &cpg_params_vec[13], *c_max_exp = &cpg_params_vec[133], *c_min_exp = &cpg_params_vec[73];
    for (int i = 0; i < steps; i++) { 
       double z00 = std::log(wet_mass - fuel_consumption * dt * max_thrust * i);
-      c_z0[i] = z00;
+      cpg_update_z0(i, z00);
       double c_exp_z0 = std::exp(-z00);
-      c_max_exp[i] = 1 / (c_exp_z0 * max_thrust);
-      c_min_exp[i] = 1 / (c_exp_z0 * min_thrust);
+      cpg_update_max_exp_z0(i, 1 / (c_exp_z0 * max_thrust));
+      cpg_update_min_exp_z0(i, 1 / (c_exp_z0 * min_thrust));
    }
-   Canon_Outdated.h = 1;
-   Canon_Outdated.G = 1;
 
    auto [px, py, pz] = vessel->position(reference_frame);
    auto [vx, vy, vz] = vessel->velocity(reference_frame);
