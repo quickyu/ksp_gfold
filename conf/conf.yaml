@@ -14,7 +14,7 @@ landing_pad_coordinate:  # Celestial body reference frame
  - 3037561.280043602    # y
  - -5523923.189587718   # z
 
-origin_vertical_offset: -15
+origin_vertical_offset: -10
 
 solver_steps: 60
 initial_flight_time: 18.0

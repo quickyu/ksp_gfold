@@ -105,6 +105,8 @@ void landing_phase()
         std::make_unique<DrawTrajectory>(config["krpc_host_ip"].as<std::string>(), local_reference_frame, vars->steps); 
 
     while (true) {
+        auto start = std::chrono::steady_clock::now();
+
         log_state();
 
         int landing_count = 0;
@@ -138,8 +140,6 @@ void landing_phase()
         Eigen::Vector3d u = Eigen::Vector3d(vars->u[2][ctrl_indic], vars->u[0][ctrl_indic], vars->u[1][ctrl_indic]);
         Eigen::Vector3d tv = u.normalized();
  
-        vessel.auto_pilot().set_target_direction({tv.x(), tv.y(), tv.z()});
-
         float m = std::exp(vars->z[ctrl_indic]);
         float tr = u.norm() * m;
         float t = tr / vessel.available_thrust();
@@ -147,7 +147,7 @@ void landing_phase()
         if (t < 0.01) {
             t = 0.01;
         }
-        vessel.control().set_throttle(t);
+        
         LOG(INFO) << "request thrust: " << tr << ", throttle: " << t;
 
         float dt = tf / vars->steps;
@@ -162,7 +162,13 @@ void landing_phase()
             tf -= k * dt * ctrl_hori;
         } 
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(dt*1000)));
+        auto end = std::chrono::steady_clock::now(); 
+
+        vessel.auto_pilot().set_target_direction({tv.x(), tv.y(), tv.z()});
+        vessel.control().set_throttle(t);
+
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(dt*1000) - duration.count()));
     }
 }
 
