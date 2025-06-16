@@ -36,6 +36,7 @@ add_executable(ksp_gfold
         src/ksp_gfold.cpp
         src/gfold_solver.cpp
         src/draw_trajectory.cpp
+        src/MiniPID.cpp
         )        
 
 target_include_directories(ksp_gfold PUBLIC
