@@ -11,6 +11,7 @@ It is designed to control launch vehicles under a modified version of the game r
 # `Demo`
 https://www.bilibili.com/video/BV198T6zzEww/?share_source=copy_web&vd_source=f9b3ed0fe21f1eca0e6c74aa814f19b6
 
+https://www.bilibili.com/video/BV1n5MvzuEZp/?vd_source=32081810a2991b96a1a09f1dddac97d1#reply114691397387461
 
 # `Dependencies`
   * Python3
