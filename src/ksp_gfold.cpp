@@ -15,6 +15,7 @@
 
 #include "gfold_solver.hpp"
 #include "draw_trajectory.hpp"
+#include "MiniPID.h"
 
 using namespace krpc;
 using namespace krpc::services;
@@ -41,19 +42,27 @@ void log_state()
         << px << ", pos_y: " << py << ", pos_z: " << pz << ", vx: " << vx << ", vy: " << vy << ", vz: " << vz;
 }
 
+void launch_rocket()
+{
+    LOG(INFO) << "Launch!";
+    if (config["has_launch_pad"].as<bool>()) {
+        vessel.control().set_throttle(1.0);
+        vessel.control().activate_next_stage();
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+        vessel.control().activate_next_stage();
+        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    } else {
+        vessel.control().set_throttle(1.0);
+        vessel.control().activate_next_stage();
+    }       
+}
+
 void ascent_phase()
 { 
-    std::vector<std::map<std::string, float>> sequence;
-    auto maneuver_seq = config["ascent_maneuver_sequence"];
-    for (size_t i = 0; i < maneuver_seq.size(); i++) {
-        auto action = maneuver_seq[i];
-        sequence.push_back({
-            {"pitch", action[0].as<float>()},
-            {"heading", action[1].as<float>()},
-            {"throttle", action[2].as<float>()},
-            {"duration", action[3].as<float>()}
-        });
-    }
+    log_state();
+
+    vessel.auto_pilot().set_deceleration_time({3.0, 3.0, 3.0});
+    vessel.auto_pilot().engage();
 
     if (config["enable_rcs"].as<bool>()) {
         for (auto &rcs : vessel.parts().rcs()) {
@@ -64,36 +73,98 @@ void ascent_phase()
         vessel.control().set_rcs(true);
     }
 
-    log_state();
-    
-    vessel.auto_pilot().set_deceleration_time({3.0, 3.0, 3.0});
-    vessel.auto_pilot().engage();
+    std::string type = config["ascent_phase"]["type"].as<std::string>();
 
-    LOG(INFO) << "Launch!";
-    vessel.control().set_throttle(1.0);
-    vessel.control().activate_next_stage();
-
-    for (auto &action : sequence) {
-        LOG(INFO) << "ascent seq: " << action["pitch"] << " " << action["heading"] << " " << action["throttle"] << " " << action["duration"];
-        vessel.auto_pilot().target_pitch_and_heading(action["pitch"], action["heading"]);
-        vessel.control().set_throttle(action["throttle"]);
-        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(action["duration"])));
-    }
-
-    while (true) {
-        auto [vx, vy, vz] = vessel.velocity(local_reference_frame);
-        if (vx < config["ascent_exit_velocity"].as<float>()) {
-            break;
+    if (type == "low_altitude") {
+        std::vector<std::map<std::string, float>> sequence;
+        auto maneuver_seq = config["ascent_phase"]["sequence"];
+        for (size_t i = 0; i < maneuver_seq.size(); i++) {
+            auto action = maneuver_seq[i];
+            sequence.push_back({
+                {"pitch", action[0].as<float>()},
+                {"heading", action[1].as<float>()},
+                {"throttle", action[2].as<float>()},
+                {"duration", action[3].as<float>()}
+            });
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
+        launch_rocket();
 
-    vessel.auto_pilot().set_reference_frame(local_reference_frame);
+        for (auto &action : sequence) {
+            LOG(INFO) << "ascent seq: " << action["pitch"] << " " << action["heading"] << " " << action["throttle"] << " " << action["duration"];
+            vessel.auto_pilot().target_pitch_and_heading(action["pitch"], action["heading"]);
+            vessel.control().set_throttle(action["throttle"]);
+            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(action["duration"])));
+        }
+    } else if (type == "high_altitude") { 
+        float ascent_velocity = config["ascent_phase"]["ascent_velocity"].as<float>();
+        float meco_altitude = config["ascent_phase"]["meco_altitude"].as<float>();
+      
+        vessel.auto_pilot().target_pitch_and_heading(config["ascent_phase"]["pitch"].as<float>(), config["ascent_phase"]["heading"].as<float>());
+
+        MiniPID pid { 
+            config["ascent_phase"]["pid_kp"].as<float>(), 
+            config["ascent_phase"]["pid_ki"].as<float>(), 
+            config["ascent_phase"]["pid_kd"].as<float>()
+        };
+        pid.setOutputLimits(0.01, 1);
+
+        launch_rocket();
+
+        while (true) {
+            auto [px, py, pz] = vessel.position(local_reference_frame);
+            LOG(INFO) << "px: " << px << ", py: " << py << ", pz: " << pz;
+
+            if (px >= meco_altitude) {
+                LOG(INFO) << "Main engine cut off";
+                vessel.control().set_throttle(0);
+                return;
+            }
+
+            auto [vx, vy, vz] = vessel.velocity(local_reference_frame);
+            LOG(INFO) << "vx: " << vx << ", vy: " << vy << ", vz: " << vz;
+
+            float throttle = pid.getOutput(vx, ascent_velocity);
+            vessel.control().set_throttle(throttle);
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    } else {
+        throw std::runtime_error("Invalid ascent type");
+    }
 }
 
 void landing_phase()
 {
+    std::string cond_type = config["initial_landing_conditions"]["type"].as<std::string>();
+    if (cond_type == "velocity") {
+        float velocity = config["initial_landing_conditions"]["value"].as<float>();    
+
+        while (true) {
+            auto [vx, vy, vz] = vessel.velocity(local_reference_frame);
+            if (vx <= velocity) {
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    } else if (cond_type == "altitude") {
+        float altitude = config["initial_landing_conditions"]["value"].as<float>();    
+        
+        while (true) {
+            auto [px, py, pz] = vessel.position(local_reference_frame);
+            if (px <= altitude) {
+                break;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    } else {
+        throw std::runtime_error("Invalid initial landing conditions");
+    }
+
+    vessel.auto_pilot().set_reference_frame(local_reference_frame);
+
     float tf = config["initial_flight_time"].as<float>();  // seconds
 
     bool recompute = true;
@@ -104,13 +175,26 @@ void landing_phase()
     std::unique_ptr<DrawTrajectory> draw_trajectory = 
         std::make_unique<DrawTrajectory>(config["krpc_host_ip"].as<std::string>(), local_reference_frame, vars->steps); 
 
+    bool deploy_leg = config["ascent_phase"]["type"].as<std::string>() == "high_altitude";
+    
     while (true) {
         auto start = std::chrono::steady_clock::now();
 
         log_state();
 
-        int landing_count = 0;
         auto landing_legs = vessel.parts().legs();
+
+        if (deploy_leg) {
+            auto [px, py, pz] = vessel.position(local_reference_frame);
+            if (px < 100) {
+                for (auto &leg : landing_legs) {
+                    leg.set_deployed(true);
+                }
+                deploy_leg = false;
+            }
+        }    
+
+        int landing_count = 0;
         for (auto &leg : landing_legs) {
             bool is_grounded = leg.is_grounded();
             if (is_grounded) {
@@ -221,18 +305,8 @@ int main(int argc, char *argv[])
     solver->set_max_angle(config["max_angle"].as<float>());
     solver->set_glide_slope(config["glide_slope_angle"].as<float>());
 
-    int state  = 0; 
-    while (true) {
-        switch (state) {
-        case 0:
-            ascent_phase();
-            state = 1;
-            break;
-        case 1:      
-            landing_phase();  
-            return 0;
-        }
-    }
+    ascent_phase();
+    landing_phase();  
 
     return 0;
 }    
