@@ -6,8 +6,9 @@ has_launch_pad: false
 ascent_phase: {
   type: "low_altitude",
   sequence: [
-    [80,  -130, 1.0,  8000], # pitch(deg), heading(deg), throttle, duration(ms)
-    [100, -130, 1.0,  3000],
+    [90,  -130, 1.0,  3000], # pitch(deg), heading(deg), throttle, duration(ms)
+    [80,  -130, 1.0,  6000], 
+    [100, -130, 1.0,  2000],
     [90,  -130, 0.01, 0]
   ]
 }  
