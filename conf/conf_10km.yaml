@@ -1,20 +1,22 @@
 krpc_host_ip: "172.24.208.1"
 
-enable_rcs: true
-has_launch_pad: false
+enable_rcs: false
+has_launch_pad: true
 
 ascent_phase: {
-  type: "low_altitude",
-  sequence: [
-    [80,  -130, 1.0,  8000], # pitch(deg), heading(deg), throttle, duration(ms)
-    [100, -130, 1.0,  3000],
-    [90,  -130, 0.01, 0]
-  ]
+  type: "high_altitude",
+  pitch: 90.0,
+  heading: 0.0,
+  ascent_velocity: 100.0, # m/s
+  pid_kp: 0.5,
+  pid_ki: 0.0,
+  pid_kd: 0.0,
+  meco_altitude: 9500.0, # m
 }  
 
 initial_landing_conditions: {
-  type: velocity,
-  value: -5.0 # m/s
+  type: altitude,
+  value: 5000 # m
 }
 
 landing_pad_coordinate:  # Celestial body reference frame
@@ -25,7 +27,7 @@ landing_pad_coordinate:  # Celestial body reference frame
 origin_vertical_offset: -10
 
 solver_steps: 60
-initial_flight_time: 18.0
+initial_flight_time: 40.0
 max_angle: 10.0
 glide_slope_angle: 30.0
 control_horizon: 1
