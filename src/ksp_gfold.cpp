@@ -62,6 +62,7 @@ void ascent_phase()
     log_state();
 
     vessel.auto_pilot().set_deceleration_time({3.0, 3.0, 3.0});
+    vessel.auto_pilot().set_reference_frame(local_reference_frame);
     vessel.auto_pilot().engage();
 
     if (config["enable_rcs"].as<bool>()) {
@@ -118,6 +119,7 @@ void ascent_phase()
             if (px >= meco_altitude) {
                 LOG(INFO) << "Main engine cut off";
                 vessel.control().set_throttle(0);
+                vessel.auto_pilot().disengage();
                 return;
             }
 
@@ -163,7 +165,7 @@ void landing_phase()
         throw std::runtime_error("Invalid initial landing conditions");
     }
 
-    vessel.auto_pilot().set_reference_frame(local_reference_frame);
+    vessel.auto_pilot().engage();
 
     float tf = config["initial_flight_time"].as<float>();  // seconds
 
@@ -283,6 +285,13 @@ int main(int argc, char *argv[])
     google::InstallPrefixFormatter(&custom_prefix);
     FLAGS_logtostdout = 1;
     
+    {
+        auto c = krpc::connect("", config["krpc_host_ip"].as<std::string>());
+        SpaceCenter sc(&c);
+        auto v = sc.active_vessel();
+        v.auto_pilot().engage();
+    }    
+
     client = krpc::connect("", config["krpc_host_ip"].as<std::string>());
     space_center = new SpaceCenter(&client);
     vessel = space_center->active_vessel();
